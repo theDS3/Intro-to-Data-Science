@@ -5,27 +5,27 @@
 
 
 ###Download the file: Pokemon.csv from the workshop website###
-# Using the following line of code, open the file "Pokeman.csv", 
+# Using the following line of code, open the file "pokemon.csv", 
 # and save the data into an object named pokemon
 
 pokemon <- read.csv("Pokemon.csv")
 
-## TASK 1: Without using R, do you know what type of object pokeman is? 
+## TASK 1: Without using R, do you know what type of object pokemon is? 
 
-dim(pokeman)
+dim(pokemon)
 # Gives the dimensions of streb.
 
 
 ## TASK 2: How many variables and how many observations are there in this dataset?
 ## TASK 3: Get the names of the variables in this dataset.
 
-rownames(pokeman)
+rownames(pokemon)
 # Obtains the names of the rows/observations in the dataset.
 
 ## TASK 4: Make a summary of the dataset using the function summary.
 
 
-pokemon_type1 <- pokeman$Type.1
+pokemon_type1 <- pokemon$Type.1
 
 ## TASK 5: What is the class of pokemon_type1? 
 
