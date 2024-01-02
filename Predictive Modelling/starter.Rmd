@@ -1,0 +1,168 @@
+---
+title: "starter"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# import necessary packages
+library(tidyverse)
+library(pROC)
+#remotes::install_github("garretrc/ggvoronoi", dependencies = TRUE, build_opts = c("--no-resave-data"))
+library(ggvoronoi)
+library(rpart)
+library(rpart.plot)
+
+# clear environment
+rm(list=ls())
+```
+
+```{r read, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc = read_csv("data/wdbc.csv")
+glimpse(wdbc)
+```
+
+WORKSHEET BEGINS
+
+```{r threshold classification, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc %>% ggplot(aes(x = smoothness.m, fill = diagnosis )) + 
+  geom_histogram(position = "dodge", bins=30) + 
+  geom_vline(xintercept = 3) + scale_x_log10()
+```
+
+```{r classification accuracy, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc %>% mutate( naive = "B",
+  predicted = ifelse( smoothness.m > 3, "M", "B")) %>%  
+  summarise( acc.pred = mean(predicted == diagnosis),
+             acc.naiv = mean(naive == diagnosis) )
+```
+
+```{r classification accuracy example, collapse = TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc %>%  
+  mutate( predicted = ifelse( smoothness.m > 3, "M", "B") ) %>% 
+  mutate( predicted = fct_relevel(predicted, "M"),
+          diagnosis = fct_relevel(diagnosis, "M") ) %>% 
+  xtabs( ~ predicted + diagnosis, data = .) %>% addmargins()
+```
+
+```{r ROC, echo=TRUE, message=FALSE, warning=FALSE}
+roc(diagnosis ~ smoothness.m,  data = wdbc) %>% 
+  .[c("sensitivities", "specificities")] %>%  as_tibble() %>% 
+  mutate( FPR = 1-specificities, TPR = sensitivities) %>% arrange(TPR) %>% 
+  ggplot( aes(x = FPR, y = TPR)) + geom_line() + 
+  scale_x_continuous(limits = c(0,1)) + scale_y_continuous(limits = c(0,1)) + 
+  coord_fixed() + geom_abline(slope = 1, lty=2) + 
+  geom_text(x=.55, y=.5,label = "random", col="red", angle = 45) + 
+  geom_text(x=.05, y=.95,label = "better",col="red") +
+  geom_text(x=.95, y=.05,label = "worse", col="red") +
+  geom_text(x=.9, y=.97,label = "lenient", col="red") +
+  geom_text(x=.1, y=.03,label = "strict", col="red") 
+```
+
+```{r ROC example, echo=TRUE, message=FALSE, warning=FALSE, fig.height=4, fig.width=4 }
+ROC_out = roc(diagnosis ~ smoothness.m,  data = wdbc)
+ggroc(ROC_out)  
+```
+
+```{r ROC approx AUC, echo=TRUE, message=FALSE, warning=FALSE}
+auc(diagnosis ~ smoothness.m,  data = wdbc) # auc(ROC_out)
+```
+
+START OF LECTURE 18 MATERIAL
+
+```{r multiple variables, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc %>% 
+  ggplot(aes(x = fract.dim.m, y = radius.m, col = diagnosis)) +
+  geom_point() + geom_vline( xintercept = .12, lty = 3) + 
+  geom_hline( yintercept = 14, lty = 3) + 
+  geom_rug()
+
+```
+
+```{r logistic regression, collapse=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+glm_out = glm( diagnosis ~ fract.dim.m + radius.m, family = "binomial", 
+  data = wdbc %>% mutate( diagnosis = factor(diagnosis)) ) 
+broom::tidy(glm_out)
+```
+
+```{r decision boundary graph, echo=TRUE, message=FALSE, warning=FALSE}
+b0.lgst = glm_out$coefficients[1]
+b.lgst = glm_out$coefficients[2:3]
+
+wdbc %>% 
+  ggplot(aes(x = fract.dim.m, y = radius.m, col = diagnosis)) +
+  geom_point() + 
+  geom_abline( intercept =  -b0.lgst/b.lgst[2], slope = -b.lgst[1]/b.lgst[2], 
+               linetype = 2, lwd = 1.2) +
+  geom_text(x = 0.015, y = 18, label = "logistic \n decision \n boundary", col = "black")  
+
+```
+
+```{r logistic regression predict, collapse = TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+( glm_pred = predict(glm_out) ) %>% sample(5)
+
+wdbc %>% modelr::add_predictions(glm_out, var = "distance") %>% 
+  mutate( predicted = ifelse(distance < 0, "B", "M")  ) %>% 
+  xtabs(~ predicted + diagnosis, data = .) %>% prop.table()
+
+```
+
+```{r logistic regression accuracy, echo=TRUE, message=FALSE, warning=FALSE, fig.height=5, fig.width=7}
+wdbc %>% modelr::add_predictions(glm_out, var = "distance") %>% 
+  ggplot(aes(x = distance, fill = diagnosis)) + 
+  geom_histogram(bins = 30, position = "dodge") + 
+  geom_vline( xintercept = 0, lty = 2, lwd = 1.3)
+
+```
+
+```{r ROC comparison, echo=TRUE, message=FALSE, warning=FALSE, fig.height=5, fig.width=7}
+ROC.thres = roc(diagnosis ~ fract.dim.m,  data = wdbc) 
+ROC.lda =  roc(diagnosis ~ distance,  data = wdbc %>% 
+                 modelr::add_predictions(glm_out, var = "distance") )
+ggroc(list( ROC.thres, ROC.lda), lwd =1) +
+  scale_color_discrete( labels = c("1 feature (threshold fract.dim)", "2 features (logistic: fract.dim + radius)") )
+```
+
+```{r nearest neighbour, echo=TRUE, message=FALSE, warning=FALSE}
+wdbc %>% mutate( fract.dim.m = scale(fract.dim.m), radius.m = scale(radius.m) ) %>% 
+  ggplot( aes(x = fract.dim.m, y = radius.m) ) +
+  geom_point(aes(col = diagnosis)) + 
+  stat_voronoi(geom="path", lty=2, col = 'grey') +
+  geom_voronoi(aes(fill = diagnosis), alpha = .2) + 
+  guides(fill=FALSE) 
+```
+
+```{r classification tree, echo=TRUE, message=FALSE, warning=FALSE}
+regions = tibble( x = c(0,0,17,17, 0,0,40,40,17,17 ), 
+                      y = c(-.05,.14,.14,-.05, .14,.32,.32,-.05,-.05,.14 ), 
+                      group = factor( c( rep("B",4),  rep("M",6) ) ) )
+
+ggplot(wdbc) +
+  geom_point( aes(x = concavity.w, y = fract.dim.m, col = diagnosis )) +
+  geom_vline( xintercept = 17, lty = 2, lwd = 2 ) + 
+  coord_cartesian( xlim = c(7,37), ylim = c( -.01, .3) ) +
+  geom_segment( x= 0, xend = 17, y = .14, yend=.14, lty = 2, lwd = 2, col = "black") +
+  geom_polygon(data = regions, aes(x = x, y = y, fill = group), alpha =.2)  + 
+  guides(fill=FALSE) 
+
+```
+
+```{r fit tree, collapse=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+rpart_out = rpart( diagnosis ~ . - id, data = wdbc, 
+    method = "class", control = rpart.control(minsplit=50) )
+rpart.plot(rpart_out)
+```
+
+
+```{r classification tree predict, collapse=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+predict(rpart_out) %>% head(2)
+
+wdbc %>% modelr::add_predictions( rpart_out, type = "class" ) %>% 
+  xtabs( ~ pred + diagnosis, data = .) %>% prop.table()
+```
+
+
+
